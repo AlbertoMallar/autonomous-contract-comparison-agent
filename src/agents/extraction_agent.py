@@ -7,6 +7,9 @@ from langchain_core.prompts import ChatPromptTemplate
 
 #es nuestro modelo Pydantic que define la estructura obligatoria de salida.
 from src.models import ContractChangeOutput
+from pydantic import ValidationError
+
+from src.errors import ContractOutputValidationError
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(PROJECT_ROOT / ".env")
@@ -69,13 +72,19 @@ def extract_changes(
     context_map: str,
 ) -> ContractChangeOutput:
 
-    response = chain.invoke(
-        {
-            "original_text": original_text,
-            "amendment_text": amendment_text,
-            "context_map": context_map,
-        }
-    )
+    try:
+        response = chain.invoke(
+            {
+                "original_text": original_text,
+                "amendment_text": amendment_text,
+                "context_map": context_map,
+            }
+        )
+
+    except ValidationError as exc:
+        raise ContractOutputValidationError(
+            "La salida del extractor no cumple la estructura ContractChangeOutput."
+        ) from exc
 
     return response
 

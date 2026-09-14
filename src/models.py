@@ -1,8 +1,20 @@
-from pydantic import BaseModel
-from typing import List
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ContractChangeOutput(BaseModel):
-    sections_changed: List[str]
-    topics_touched: List[str]
-    summary_of_the_change: str
+    model_config = ConfigDict(
+        extra="forbid",
+        str_strip_whitespace=True,
+    )
+
+    sections_changed: list[str] = Field(
+        description="Cláusulas o secciones afectadas por la adenda."
+    )
+
+    topics_touched: list[str] = Field(
+        description="Temas legales o contractuales afectados."
+    )
+
+    summary_of_the_change: str = Field(
+        description="Resumen preciso de los cambios introducidos por la adenda."
+    )
