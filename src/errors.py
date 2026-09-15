@@ -8,3 +8,6 @@ class VisionParsingError(Exception):
 
 class ContractOutputValidationError(Exception):
     """Error cuando la salida del extractor no cumple el contrato Pydantic."""
+
+class ObservabilityError(Exception):
+    """Error al inicializar o enviar información a Langfuse."""
