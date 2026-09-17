@@ -1,7 +1,9 @@
 from langfuse import Langfuse
+from langfuse.langchain import CallbackHandler
 
 from src.config import Settings
 from src.errors import ObservabilityError
+
 
 
 class LangfuseObservability:
@@ -18,6 +20,11 @@ class LangfuseObservability:
             raise ObservabilityError(
                 f"No se pudo inicializar Langfuse: {exc}"
             ) from exc
+        
+    def callback_handler(self):
+        return CallbackHandler(
+        public_key=self.public_key
+    )
 
     def test_observation(self) -> None:
         try:
@@ -38,6 +45,9 @@ class LangfuseObservability:
                 f"No se pudo enviar la prueba a Langfuse: {exc}"
             ) from exc
 
+    def callback_handler(self):
+        return CallbackHandler()
+    
 if __name__ == "__main__":
     settings = Settings.from_env()
 

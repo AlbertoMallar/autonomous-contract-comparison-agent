@@ -56,7 +56,10 @@ def main():
             "Indicá --case simple/complex o las rutas del contrato y la adenda."
         )
 
-    observability = LangfuseObservability(Settings.from_env())
+    settings = Settings.from_env()
+
+    observability = LangfuseObservability(settings)
+    langfuse_handler = observability.callback_handler()
 
     try:
         with observability.client.start_as_current_observation(
@@ -67,20 +70,85 @@ def main():
                 "amendment_path": str(amendment_path),
             },
         ) as observation:
-            #llamados al image_parser
-            original_text = parse_contract_image(original_path)
-            amendment_text = parse_contract_image(amendment_path)
+            
+            with observability.client.start_as_current_observation(
+                name="parse_original_contract",
+                as_type="generation",
+                input={"image_path": str(original_path)},
+                model=settings.openai_vision_model,
+                metadata={
+                    "stage": "vision_parsing",
+                    "document": "original_contract",
+                },
 
-            context_map = contextualize_contracts(
-                original_text,
-                amendment_text,
+            ) as parse_original_observation:
+                original_text = parse_contract_image(
+                original_path,
+                observation=parse_original_observation,
             )
 
-            result = extract_changes(
-                original_text,
-                amendment_text,
-                context_map,
+                parse_original_observation.update(
+                    output={"extracted_text": original_text}
+                )
+
+            with observability.client.start_as_current_observation(
+                name="parse_amendment_contract",
+                as_type="generation",
+                input={"image_path": str(amendment_path)},
+                model=settings.openai_vision_model,
+                metadata={
+                    "stage": "vision_parsing",
+                    "document": "amendment_contract",
+                },
+
+            ) as parse_amendment_observation:
+                amendment_text = parse_contract_image(
+                amendment_path,
+                observation=parse_amendment_observation,
             )
+
+                parse_amendment_observation.update(
+                    output={"extracted_text": amendment_text}
+                )
+
+            with observability.client.start_as_current_observation(
+                name="contextualization_agent",
+                as_type="span",
+                input={
+                    "original_text": original_text,
+                    "amendment_text": amendment_text,
+                },
+            ) as contextualization_observation:
+                context_map = contextualize_contracts(
+                    original_text,
+                    amendment_text,
+                    langfuse_handler=langfuse_handler,
+                )
+
+                contextualization_observation.update(
+                    output={"context_map": context_map}
+                )
+
+
+            with observability.client.start_as_current_observation(
+                name="extraction_agent",
+                as_type="span",
+                input={
+                    "original_text": original_text,
+                    "amendment_text": amendment_text,
+                    "context_map": context_map,
+                },
+            ) as extraction_observation:
+                result = extract_changes(
+                    original_text,
+                    amendment_text,
+                    context_map,
+                    langfuse_handler=langfuse_handler,
+                )
+
+                extraction_observation.update(
+                    output=result.model_dump(mode="json")
+                )
 
             observation.update(output=result.model_dump(mode="json"))
 

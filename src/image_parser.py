@@ -98,7 +98,10 @@ def encode_image_to_data_url(
     return f"data:{mime_type};base64,{encoded_image}"
 
 
-def parse_contract_image(image_path: str | Path) -> str:
+def parse_contract_image(
+    image_path: str | Path,
+    observation=None,
+) -> str:
 
     settings = Settings.from_env()
 
@@ -160,6 +163,18 @@ def parse_contract_image(image_path: str | Path) -> str:
     if not extracted_text:
         raise VisionParsingError(
             "GPT-4o no devolvió texto para la imagen."
+        )
+
+    usage = getattr(response, "usage", None)
+
+    if observation is not None and usage is not None:
+        observation.update(
+            model=settings.openai_vision_model,
+            usage_details={
+                "input_tokens": usage.input_tokens,
+                "output_tokens": usage.output_tokens,
+                "total_tokens": usage.total_tokens,
+            },
         )
 
     return extracted_text
