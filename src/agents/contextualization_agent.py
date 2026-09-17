@@ -45,6 +45,9 @@ No hagas:
 model = ChatOpenAI(
     model="gpt-4o",
     temperature=0,
+    max_tokens=2000,
+    timeout=60,
+    max_retries=2,
 )
 
 #definimos la estructura del prompt

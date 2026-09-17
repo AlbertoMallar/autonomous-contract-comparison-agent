@@ -6,7 +6,12 @@ from src.image_parser import parse_contract_image
 from src.agents.contextualization_agent import contextualize_contracts
 from src.agents.extraction_agent import extract_changes
 from src.observability import LangfuseObservability
-
+from src.errors import (
+    ContractOutputValidationError,
+    ImageValidationError,
+    ObservabilityError,
+    VisionParsingError,
+)
 
 TEST_CASES = {
     "simple": Path("data/test_contracts/caso_simple"),
@@ -70,7 +75,7 @@ def main():
                 "amendment_path": str(amendment_path),
             },
         ) as observation:
-            
+
             with observability.client.start_as_current_observation(
                 name="parse_original_contract",
                 as_type="generation",
@@ -156,8 +161,18 @@ def main():
             print(result.model_dump_json(indent=2))
     finally:
         # La observación termina al salir del with, antes de vaciar la cola.
-        observability.client.flush()
+        observability.flush()
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except (
+        ImageValidationError,
+        VisionParsingError,
+        ContractOutputValidationError,
+        ObservabilityError,
+        ValueError,
+    ) as exc:
+        print(f"Error: {exc}")
+        raise SystemExit(1)

@@ -120,6 +120,7 @@ def parse_contract_image(
         response = client.responses.create(
             model=settings.openai_vision_model,
             instructions=VISION_PROMPT,
+            max_output_tokens=6000,
             input=[
                 {
                     "role": "user",

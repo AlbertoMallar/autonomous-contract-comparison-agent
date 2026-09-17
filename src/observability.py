@@ -20,39 +20,19 @@ class LangfuseObservability:
             raise ObservabilityError(
                 f"No se pudo inicializar Langfuse: {exc}"
             ) from exc
-        
+
     def callback_handler(self):
         return CallbackHandler(
         public_key=self.public_key
     )
 
-    def test_observation(self) -> None:
-        try:
-            with self.client.start_as_current_observation(
-                name="langfuse-test",
-                as_type="span",
-                input={"message": "Prueba de conexión"},
-            ) as observation:
-
-                observation.update(
-                    output={"status": "ok"}
-                )
-
-            self.client.flush()
-
-        except Exception as exc:
-            raise ObservabilityError(
-                f"No se pudo enviar la prueba a Langfuse: {exc}"
-            ) from exc
-
     def callback_handler(self):
         return CallbackHandler()
-    
-if __name__ == "__main__":
-    settings = Settings.from_env()
 
-    observability = LangfuseObservability(settings)
-
-    observability.test_observation()
-
-    print("Observación enviada a Langfuse.")
+    def flush(self) -> None:
+        try:
+            self.client.flush()
+        except Exception as exc:
+            raise ObservabilityError(
+                f"No se pudo enviar la traza a Langfuse: {exc}"
+            ) from exc

@@ -42,6 +42,9 @@ No inventes información.
 model = ChatOpenAI(
     model="gpt-4o",
     temperature=0,
+    max_tokens=2000,
+    timeout=60,
+    max_retries=2,
 )
 
 #le exigimos al modelo devolver una respuesta compatible con nuestro modelo Pydantic.
