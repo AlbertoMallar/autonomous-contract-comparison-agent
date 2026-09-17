@@ -7,6 +7,9 @@ from langchain_core.prompts import ChatPromptTemplate
 
 #es nuestro modelo Pydantic que define la estructura obligatoria de salida.
 from src.models import ContractChangeOutput
+from pydantic import ValidationError
+
+from src.errors import ContractOutputValidationError
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(PROJECT_ROOT / ".env")
@@ -15,26 +18,33 @@ EXTRACTION_PROMPT = """
 Sos un auditor legal senior especializado en análisis de adendas contractuales.
 
 Recibís:
-- el texto completo del contrato original;
-- el texto completo de la adenda;
-- un mapa contextual que relaciona la estructura de ambos documentos.
+- el contrato original;
+- la adenda;
+- un mapa contextual de ambos documentos.
 
-Tu tarea es identificar los cambios introducidos por la adenda respecto del contrato original.
+Identificá los cambios introducidos por la adenda respecto del contrato original:
+adiciones, eliminaciones y modificaciones.
 
-Analizá adiciones, eliminaciones y modificaciones concretas.
-Usá el mapa contextual como guía para localizar las secciones relacionadas, pero verificá siempre los cambios contra los textos originales.
+Usá el mapa contextual para localizar las secciones relacionadas, pero verificá
+cada cambio contra los textos originales.
 
 Devolvé:
-- las secciones afectadas;
-- los temas afectados;
-- un resumen preciso de los cambios encontrados.
+- sections_changed: cláusulas o secciones afectadas;
+- topics_touched: temas contractuales afectados;
+- summary_of_the_change: resumen factual y preciso de los cambios.
 
-No inventes cambios que no estén respaldados por los documentos.
+Indicá claramente si cada cambio es una adición, eliminación o modificación.
+No infieras consecuencias jurídicas, efectos o intenciones que no estén
+explícitamente respaldados por los documentos.
+No inventes información.
 """
 
 model = ChatOpenAI(
     model="gpt-4o",
     temperature=0,
+    max_tokens=2000,
+    timeout=60,
+    max_retries=2,
 )
 
 #le exigimos al modelo devolver una respuesta compatible con nuestro modelo Pydantic.
@@ -67,15 +77,33 @@ def extract_changes(
     original_text: str,
     amendment_text: str,
     context_map: str,
+    langfuse_handler=None,
 ) -> ContractChangeOutput:
 
-    response = chain.invoke(
-        {
-            "original_text": original_text,
-            "amendment_text": amendment_text,
-            "context_map": context_map,
+    config = {
+        "metadata": {
+            "agent": "extraction_agent",
+            "purpose": "contract_change_extraction",
         }
-    )
+    }
+
+    if langfuse_handler is not None:
+        config["callbacks"] = [langfuse_handler]
+
+    try:
+        response = chain.invoke(
+            {
+                "original_text": original_text,
+                "amendment_text": amendment_text,
+                "context_map": context_map,
+            },
+            config=config,
+        )
+
+    except ValidationError as exc:
+        raise ContractOutputValidationError(
+            "La salida del extractor no cumple la estructura ContractChangeOutput."
+        ) from exc
 
     return response
 

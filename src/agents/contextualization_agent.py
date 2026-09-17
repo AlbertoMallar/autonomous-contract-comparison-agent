@@ -45,6 +45,9 @@ No hagas:
 model = ChatOpenAI(
     model="gpt-4o",
     temperature=0,
+    max_tokens=2000,
+    timeout=60,
+    max_retries=2,
 )
 
 #definimos la estructura del prompt
@@ -71,13 +74,24 @@ chain = prompt | model
 def contextualize_contracts(
     original_text: str,
     amendment_text: str,
+    langfuse_handler=None,
 ) -> str:
+    config = {
+        "metadata": {
+            "agent": "contextualization_agent",
+            "purpose": "structural_mapping",
+        }
+    }
+
+    if langfuse_handler is not None:
+        config["callbacks"] = [langfuse_handler]
 
     response = chain.invoke(
         {
             "original_text": original_text,
             "amendment_text": amendment_text,
-        }
+        },
+        config=config,
     )
 
     return response.content
