@@ -166,6 +166,7 @@ def parse_contract_image(
             "GPT-4o no devolvió texto para la imagen."
         )
 
+    #devolver none si no se obtiene el atributo usage.
     usage = getattr(response, "usage", None)
 
     if observation is not None and usage is not None:

@@ -1,154 +1,64 @@
 # Autonomous Contract Comparison Agent
 
-Proyecto Integrador del Módulo 4 de AI Engineering.
+A multimodal AI pipeline that compares an original contract with its amendment from document images. It transcribes both documents, maps their structure, and returns structured JSON describing the affected sections, topics, and contractual additions, removals, and modifications.
 
-Sistema multiagente para comparar un contrato original con su adenda a partir de imágenes y producir una salida estructurada con las modificaciones, eliminaciones y adiciones contractuales detectadas.
+The command-line application combines **GPT-4o Vision** for transcription, two specialized agents built with **LangChain** for contextualization and extraction, **Pydantic** for output validation, and **Langfuse** for observability. Orchestration consists of direct sequential calls in Python.
 
-El flujo es secuencial: transcribe ambos documentos con GPT-4o, construye un mapa contextual y extrae los cambios mediante dos agentes especializados con LangChain. Pydantic valida la estructura de la respuesta y Langfuse registra la ejecución por etapas.
+[Architecture](#architecture) · [Example Output](#example-output) · [Installation](#installation) · [Usage](#usage) · [Current Limitations](#current-limitations)
 
-## Arquitectura
+## What it does
+
+1. Receives one image of the original contract and one image of its amendment.
+2. Transcribes each image using GPT-4o Vision through the OpenAI Responses API.
+3. Builds a contextual map of document sections, their purposes, and their correspondence.
+4. Passes the map and both source texts to an extraction agent to identify additions, removals, and modifications.
+5. Validates the response against a Pydantic model and prints the result as JSON.
+6. Records the execution stages in Langfuse, including their inputs, outputs, and timing.
+
+## Tech Stack
+
+| Technology | Role |
+| --- | --- |
+| Python 3.10+ | CLI, configuration, and sequential orchestration. |
+| OpenAI GPT-4o / Vision | Image transcription and text analysis. |
+| OpenAI Python SDK / Responses API | Sends document images for transcription. |
+| LangChain (`langchain-core`, `langchain-openai`) | Prompt composition, `ChatOpenAI` calls, and structured extraction. |
+| Pydantic | Defines and validates the output schema. |
+| Langfuse Python SDK v4 | Stage observations and LangChain callbacks. |
+| Pillow | Checks that input images can be decoded. |
+| python-dotenv | Loads credentials from `.env`. |
+
+Direct dependency versions are pinned in [`requirements.txt`](requirements.txt).
+
+## Architecture
 
 ```text
-Contrato original (imagen) --> GPT-4o Vision --> texto original
-Adenda (imagen) -----------> GPT-4o Vision --> texto adenda
+Original contract image --> GPT-4o Vision --> original text
+Amendment image ---------> GPT-4o Vision --> amendment text
 
-                    texto original + texto adenda
-                                  |
-                                  v
-                       Agente contextualizador
-                                  |
-                           mapa contextual
-                                  |
-                   mapa contextual + ambos textos
-                                  |
-                                  v
-                          Agente extractor
-                                  |
-                                  v
-                 ContractChangeOutput (JSON en consola)
+                       both source texts
+                               |
+                               v
+                   Contextualization Agent
+                               |
+                               v
+                Context map + both source texts
+                               |
+                               v
+                      Extraction Agent
+                               |
+                               v
+               ContractChangeOutput (Pydantic)
+                               |
+                               v
+                         JSON in CLI
 ```
 
-### 1. Transcripción de imágenes
+[`src/main.py`](src/main.py) coordinates every step sequentially. Langfuse observes the workflow and the agents' LangChain calls; it does not control execution.
 
-[`src/image_parser.py`](src/image_parser.py) recibe imágenes PNG, JPG o JPEG, valida el archivo, lo codifica en Base64 y lo envía a GPT-4o mediante la API Responses de OpenAI. El prompt solicita transcribir el documento conservando títulos, cláusulas, nombres, fechas e importes, sin resumir ni interpretar.
+## Example Output
 
-Se procesa una imagen por documento. El límite configurado por archivo es de 10 MiB (`10 * 1024 * 1024` bytes).
-
-### 2. Contextualización
-
-[`contextualize_contracts`](src/agents/contextualization_agent.py) recibe los dos textos y construye un mapa con sus secciones, propósitos y correspondencias. Su prompt delimita la tarea al análisis estructural, sin identificar cambios contractuales.
-
-### 3. Extracción de cambios
-
-[`extract_changes`](src/agents/extraction_agent.py) recibe el contrato original, la adenda y el mapa contextual. Identifica adiciones, eliminaciones y modificaciones, con la instrucción de verificar cada cambio contra los textos y evitar inferir consecuencias jurídicas no respaldadas por los documentos.
-
-Ambos agentes utilizan `ChatOpenAI` con el modelo `gpt-4o` y `temperature=0`.
-
-### 4. Salida estructurada
-
-El extractor utiliza `with_structured_output(ContractChangeOutput)`. El modelo definido en [`src/models.py`](src/models.py) contiene:
-
-| Campo | Tipo | Contenido |
-| --- | --- | --- |
-| `sections_changed` | `list[str]` | Cláusulas o secciones afectadas. |
-| `topics_touched` | `list[str]` | Temas contractuales afectados. |
-| `summary_of_the_change` | `str` | Resumen de los cambios detectados. |
-
-El modelo rechaza campos adicionales y elimina espacios al inicio y al final de las cadenas. Pydantic valida la estructura y los tipos; no verifica la exactitud factual del análisis. Los prompts orientan el comportamiento de los agentes, pero tampoco garantizan que la transcripción o la comparación estén libres de errores.
-
-## Instalación y configuración
-
-### Requisitos
-
-- Python 3.10 o superior y `pip`.
-- Una clave de API de OpenAI con acceso a `gpt-4o`.
-- Un proyecto de Langfuse con sus claves pública y secreta.
-- Conexión a los servicios de OpenAI y Langfuse.
-
-Ejecutar los siguientes comandos desde la raíz del proyecto.
-
-### 1. Crear y activar un entorno virtual
-
-En Windows PowerShell:
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-```
-
-En macOS o Linux:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-### 2. Instalar las dependencias
-
-```bash
-python -m pip install -r requirements.txt
-```
-
-Las versiones de las dependencias directas están fijadas en [`requirements.txt`](requirements.txt).
-
-### 3. Configurar las credenciales
-
-Copiar [`.env.example`](.env.example) a `.env` y completar los valores. Si ya existe un `.env` configurado, conservarlo.
-
-En PowerShell:
-
-```powershell
-Copy-Item .env.example .env
-```
-
-En macOS o Linux:
-
-```bash
-cp .env.example .env
-```
-
-Contenido de `.env`:
-
-```dotenv
-OPENAI_API_KEY=
-LANGFUSE_PUBLIC_KEY=
-LANGFUSE_SECRET_KEY=
-LANGFUSE_HOST=https://cloud.langfuse.com
-```
-
-`LANGFUSE_HOST` debe apuntar a la región o instancia del proyecto de Langfuse. Las tres claves son obligatorias en la configuración actual.
-
-[`Settings`](src/config.py) carga estas variables y define los valores predeterminados del parser: modelo `gpt-4o`, timeout de 60 segundos, hasta 2 reintentos y límite de imagen de 10 MiB. El parser limita la salida de Vision a 6000 tokens; cada agente limita su salida a 2000 tokens por llamada. Los agentes configuran su modelo, timeout y reintentos en sus respectivos módulos. El archivo `.env` está excluido de Git mediante [`.gitignore`](.gitignore).
-
-## Ejecución
-
-Desde la raíz del proyecto, con el entorno virtual activo y las credenciales configuradas:
-
-### Caso simple
-
-```bash
-python -m src.main --case simple
-```
-
-### Caso complejo
-
-```bash
-python -m src.main --case complex
-```
-
-### Documentos propios
-
-Pasar primero la imagen del contrato original y luego la de la adenda:
-
-```bash
-python -m src.main "ruta/contrato.png" "ruta/adenda.png"
-```
-
-La interfaz actual acepta dos imágenes; no procesa PDF ni conjuntos de páginas directamente. Cada análisis realiza llamadas a la API de OpenAI.
-
-### Resultado
-
-El CLI imprime el encabezado `--- RESULTADO FINAL ---` y, a continuación, el resultado como JSON con indentación de dos espacios. Ejemplo de una salida real del caso simple, registrada el 17 de septiembre de 2026:
+Recorded CLI output for the included `simple` case, dated September 17, 2026. The example is preserved from the existing project documentation in Spanish to match the source documents and recorded response.
 
 ```json
 {
@@ -164,70 +74,223 @@ El CLI imprime el encabezado `--- RESULTADO FINAL ---` y, a continuación, el re
 }
 ```
 
-La redacción puede variar entre ejecuciones. El programa muestra el resultado en consola; no lo guarda automáticamente en un archivo.
+The CLI prints `--- RESULTADO FINAL ---` before the JSON. Wording may vary between runs; the result is printed to the console and is not automatically saved to a file.
 
-## Observabilidad con Langfuse
+## Key Engineering Decisions
 
-El pipeline está instrumentado con el SDK Python de Langfuse v4. Al iniciar el análisis se crea una observación raíz llamada `contract-analysis`. Las etapas principales de una ejecución completa son:
+### Separate transcription from reasoning
+
+Both images are transcribed before the agents run. This keeps source text available throughout the comparison and separates image interpretation from structural mapping and change extraction.
+
+### Separate contextualization from extraction
+
+The contextualization agent maps sections and their relationships without identifying changes. The extraction agent handles the comparison and receives both transcriptions alongside that map. Each prompt has a focused responsibility, and extraction can check the source texts rather than relying only on an intermediate interpretation.
+
+### Structured outputs with Pydantic
+
+The extractor uses `with_structured_output(ContractChangeOutput)` to enforce a predictable output contract. Pydantic validates structure and types, rejects extra fields, and strips surrounding whitespace from strings. It does not validate the factual correctness of the analysis.
+
+### Reduce agent variability
+
+Both agents use `gpt-4o` with `temperature=0` to reduce response variability. This does not guarantee identical or error-free results. The separate Vision transcription call does not explicitly set a temperature.
+
+### Observability with Langfuse
+
+Named observations separate transcription, contextualization, and extraction, making their inputs, outputs, and latency inspectable. LangChain callbacks add prompt and response visibility for the agents; the parser explicitly attaches token usage when OpenAI returns it.
+
+### Sequential orchestration instead of LangGraph
+
+The workflow is linear, with no dynamic routing, agent branching, or cycles. Direct calls keep the orchestration proportional to that scope and make execution order explicit. The application does not use LangGraph to orchestrate its agents.
+
+## How it works
+
+### Image transcription
+
+[`src/image_parser.py`](src/image_parser.py) accepts PNG, JPG, and JPEG files. Before each transcription request, it checks the path, extension, file size, and image integrity using Pillow. The per-file size limit is **10 MiB** (`10 * 1024 * 1024` bytes).
+
+The parser encodes the image as a Base64 data URL and calls `client.responses.create()` with `detail="high"`. Its prompt requests all visible text in document order, preserving headings, clause numbering, names, dates, and amounts without summarizing or interpreting them.
+
+### Contextualization
+
+[`contextualize_contracts`](src/agents/contextualization_agent.py) receives both transcriptions and produces a textual map of each document's sections, their purposes, and their correspondence. Its prompt explicitly excludes comparing values or describing contractual changes.
+
+### Change extraction
+
+[`extract_changes`](src/agents/extraction_agent.py) receives both transcriptions and the context map. Its prompt asks for additions, removals, and modifications, checked against the source texts, without inferring legal consequences or intentions unsupported by the documents.
+
+### Structured output
+
+[`ContractChangeOutput`](src/models.py) defines three required fields:
+
+| Field | Type | Content |
+| --- | --- | --- |
+| `sections_changed` | `list[str]` | Affected clauses or sections. |
+| `topics_touched` | `list[str]` | Affected contractual topics. |
+| `summary_of_the_change` | `str` | Factual summary of the detected changes. |
+
+The extraction chain returns a Pydantic instance, which the CLI serializes with `model_dump_json(indent=2)`. Change types are described in the summary; the schema does not define a separate record or type field for each change.
+
+## Installation
+
+### Prerequisites
+
+- Python **3.10 or newer**, within the Python 3 series, and `pip`.
+- An OpenAI API key with access to `gpt-4o`.
+- A Langfuse project with a public key, secret key, and its region or instance URL.
+- Network access to OpenAI and Langfuse.
+
+Run all commands from the project root (`m4/project` in this workspace).
+
+### 1. Create and activate a virtual environment
+
+Windows PowerShell:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+macOS / Linux:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+### 2. Install dependencies
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+### 3. Configure credentials
+
+Copy [`.env.example`](.env.example) to `.env` and fill in the values. Keep an existing configured `.env` rather than overwriting it.
+
+Windows PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+macOS / Linux:
+
+```bash
+cp .env.example .env
+```
+
+```dotenv
+OPENAI_API_KEY=
+LANGFUSE_PUBLIC_KEY=
+LANGFUSE_SECRET_KEY=
+LANGFUSE_HOST=https://cloud.langfuse.com
+```
+
+All three keys are required by the current configuration. Set `LANGFUSE_HOST` to the URL for your Langfuse project's region or instance; the application passes it to the SDK as `base_url`. The default is `https://cloud.langfuse.com`. The `.env` file is excluded from Git by [`.gitignore`](.gitignore).
+
+### Runtime defaults
+
+| Setting | Vision transcription | Each specialized agent |
+| --- | --- | --- |
+| Model | `gpt-4o` | `gpt-4o` |
+| Timeout per request | 60 seconds | 60 seconds |
+| Maximum retries | 2 | 2 |
+| Output token limit per call | 6000 | 2000 |
+| Temperature | Not explicitly set | `0` |
+
+Parser defaults are defined in [`Settings`](src/config.py); agent settings are defined in their respective modules. Only the credentials and Langfuse host shown above are read from environment variables by `Settings.from_env()`.
+
+## Usage
+
+With the virtual environment active and credentials configured:
+
+### Simple test case
+
+```bash
+python -m src.main --case simple
+```
+
+### Complex test case
+
+```bash
+python -m src.main --case complex
+```
+
+### Custom document images
+
+Pass the original contract first and its amendment second:
+
+```bash
+python -m src.main "path/to/original.png" "path/to/amendment.png"
+```
+
+Each analysis makes real OpenAI API calls and incurs API usage. The CLI accepts one image per document and prints the JSON result described in [Example Output](#example-output).
+
+## Observability
+
+[`LangfuseObservability`](src/observability.py) initializes the Langfuse client using the project settings. A complete execution creates this observation hierarchy:
 
 ```text
-contract-analysis                 [chain]
-├── parse_original_contract       [generation]
-├── parse_amendment_contract      [generation]
+contract-analysis                [chain]
+├── parse_original_contract      [generation]
+├── parse_amendment_contract     [generation]
 ├── contextualization_agent      [span]
 └── extraction_agent             [span]
 ```
 
-Los agentes reciben un `CallbackHandler` de Langfuse, que añade observaciones de las operaciones internas de LangChain. Por eso, el árbol completo puede incluir más nodos que los mostrados en este esquema.
+The agents receive a Langfuse `CallbackHandler`, which adds observations for their internal LangChain operations. The full trace can therefore contain additional nested nodes.
 
-La instrumentación registra:
+The instrumentation captures:
 
-- Rutas de las imágenes en la entrada de la raíz y del parsing.
-- Textos extraídos, mapa contextual y resultado final en las etapas correspondientes.
-- Entradas y salidas de las cadenas de LangChain, incluidos sus prompts y respuestas.
-- Duración de las observaciones y metadata de las etapas instrumentadas.
-- Modelo y uso de tokens: registrados explícitamente en el parser cuando OpenAI devuelve `usage`, y mediante callbacks en las llamadas de LangChain.
+- Image paths at the root and transcription stages.
+- Transcribed text, the context map, and the final result at their respective stages.
+- Agent chain inputs and outputs, including prompts and responses through LangChain callbacks.
+- Observation timing and stage metadata.
+- Model and token usage: explicitly attached by the parser when OpenAI returns `usage`, and captured through callbacks for the agents.
 
-Los costos se estiman en Langfuse a partir del modelo, los datos de uso y las tarifas que correspondan. El código no envía un costo monetario calculado manualmente; su disponibilidad depende de que Langfuse pueda asociar el modelo y las métricas de uso con su definición de precios. Ver [seguimiento de tokens y costos](https://langfuse.com/docs/observability/features/token-and-cost-tracking).
+The Vision observations record image paths and extracted text; they do not explicitly record the transcription prompt or image payload. Images are sent to OpenAI, while document text and analysis results are recorded in Langfuse.
 
-[`LangfuseObservability`](src/observability.py) reutiliza `Settings` para inicializar el cliente. El CLI llama a `observability.flush()` en un bloque `finally`, después de cerrar las observaciones, para vaciar los datos pendientes antes de salir, incluso si falla una etapa del análisis.
+The application does not submit a manually calculated monetary cost. Langfuse can infer costs when the model and usage fields match a priced model definition; availability depends on that configuration. See [Langfuse token and cost tracking](https://langfuse.com/docs/observability/features/token-and-cost-tracking).
 
-Para inspeccionar una ejecución, abrir el proyecto de Langfuse, buscar `contract-analysis` en **Tracing** y revisar sus observaciones. Las imágenes se envían a OpenAI para la transcripción; los textos de los documentos y los resultados del análisis se registran en Langfuse.
+Find executions by the name `contract-analysis` in your Langfuse project. The CLI flushes pending observations in a `finally` block after closing them, including when an analysis stage fails.
 
-## Validaciones y manejo de errores
+## Validation and Error Handling
 
-Las excepciones propias están definidas en [`src/errors.py`](src/errors.py):
+Application-specific exceptions are defined in [`src/errors.py`](src/errors.py).
 
-| Área | Validaciones o errores contemplados |
+| Area | Checks or errors handled |
 | --- | --- |
-| Configuración | Ausencia de las claves obligatorias de OpenAI o Langfuse. |
-| Imágenes | Ruta inexistente, ruta que no es un archivo, extensión no admitida, archivo vacío, imagen corrupta o tamaño superior al límite. |
-| Transcripción con OpenAI | Timeout, rate limit, error de conexión, error HTTP de la API y respuesta de texto vacía. |
-| Extracción estructurada | `ValidationError` de Pydantic, convertido en `ContractOutputValidationError`. |
-| Observabilidad | Excepciones que se propaguen durante la inicialización del cliente o la llamada a `flush()`, convertidas en `ObservabilityError`. |
+| Configuration | Missing required OpenAI or Langfuse keys. |
+| Images | Missing paths, non-file paths, unsupported extensions, empty files, corrupt or undecodable images, and files larger than 10 MiB. |
+| Vision transcription | OpenAI timeouts, rate limits, connection errors, HTTP API errors, and empty text responses. |
+| Structured extraction | Pydantic `ValidationError`, wrapped as `ContractOutputValidationError`. |
+| Observability | Exceptions propagated during client initialization or `flush()`, wrapped as `ObservabilityError`. |
 
-El CLI muestra los errores que captura con el prefijo `Error:` y termina con código de salida `1`. El manejo específico de errores de OpenAI está implementado en el parser de imágenes; las llamadas de los agentes no tienen la misma traducción de excepciones.
+For errors it catches, the CLI prints `Error:` followed by a message and exits with status `1`. OpenAI-specific exception translation is implemented in the image parser; agent API failures do not have equivalent handling. The prompts guide transcription and comparison behavior but cannot guarantee correctness.
 
-## Casos de prueba
+## Testing / Evaluation
 
-Los documentos se encuentran en [`data/test_contracts/`](data/test_contracts/README.md):
+Two document pairs are included in [`data/test_contracts/`](data/test_contracts/README.md). Each case contains `contrato_original.png`, `adenda.png`, and `expected.json`.
 
-| Caso | Cambios esperados |
-| --- | --- |
-| `caso_simple` | Modificación del monto mensual y de la fecha de vencimiento. |
-| `caso_complejo` | Ampliación del alcance territorial, eliminación de una restricción de uso y adición de una obligación de notificar incidentes de seguridad. |
+| CLI case | Directory | Expected changes |
+| --- | --- | --- |
+| `simple` | [`caso_simple`](data/test_contracts/caso_simple) | Monthly fee increases from USD 1,000 to USD 1,500; expiration moves from December 31, 2026 to June 30, 2027. |
+| `complex` | [`caso_complejo`](data/test_contracts/caso_complejo) | Territorial scope expands from Argentina and Uruguay to also include Chile and Paraguay; a restriction limiting confidential information use to evaluating a financing transaction is removed; a duty to notify security incidents within 24 hours of detection is added. |
 
-Cada directorio contiene:
+The `expected.json` files are **manual review references**. The CLI does not load them, compare results automatically, or calculate accuracy, precision, or a pass/fail score. There is no automated test suite or evaluation runner in the repository.
 
-```text
-contrato_original.png
-adenda.png
-expected.json
-```
+To review a case, run its [usage command](#usage), check the transcription and analysis stages in Langfuse, and compare the affected sections, topics, and factual changes with its reference and source images. Exact wording is not a matching criterion.
 
-Los archivos `expected.json` sirven como referencia para una comparación manual. El CLI no los lee ni calcula automáticamente una puntuación o un resultado de aprobación. Para verificar un caso, ejecutar el comando correspondiente y contrastar las secciones, los temas y los cambios descritos con su referencia, sin exigir una coincidencia literal de redacción.
+## Current Limitations
 
-## Estructura del proyecto
+- **One image per document.** The CLI does not natively process PDFs or combine multiple pages.
+- **Original contract plus amendment.** The current prompts and interface target that relationship; arbitrary document comparison is outside the documented scope.
+- **Structure is not factual validation.** Pydantic checks the response schema and types, not whether every change is correct or complete.
+- **Human verification is required.** Transcription errors can propagate into extraction, and both stages require review. The pipeline does not replace human legal review.
+- **Evaluation is manual.** The two included cases do not establish measured accuracy or broader reliability.
+- **Finite output budgets.** Vision transcription is capped at 6000 output tokens and each agent at 2000; the workflow does not split long documents or explicitly check for truncated responses.
+
+## Project Structure
 
 ```text
 .
@@ -235,32 +298,19 @@ Los archivos `expected.json` sirven como referencia para una comparación manual
 ├── requirements.txt
 ├── .env.example
 ├── src/
-│   ├── main.py
-│   ├── config.py
-│   ├── errors.py
-│   ├── image_parser.py
-│   ├── models.py
-│   ├── observability.py
+│   ├── main.py                       # CLI and sequential workflow
+│   ├── config.py                     # Credentials and parser defaults
+│   ├── image_parser.py               # Image validation and transcription
+│   ├── models.py                     # Pydantic output schema
+│   ├── observability.py              # Langfuse client and callbacks
+│   ├── errors.py                     # Application-specific exceptions
 │   └── agents/
 │       ├── contextualization_agent.py
 │       └── extraction_agent.py
-└── data/
-    └── test_contracts/
-        ├── README.md
-        ├── caso_simple/
-        └── caso_complejo/
+└── data/test_contracts/
+    ├── README.md
+    ├── caso_simple/                   # Original, amendment, expected JSON
+    └── caso_complejo/                 # Original, amendment, expected JSON
 ```
 
-## Decisiones de diseño
-
-- **Separación de responsabilidades:** un agente construye el mapa estructural y otro identifica los cambios. El extractor recibe también ambos textos para contrastar la información con las fuentes.
-- **LangChain:** compone los prompts y las llamadas a los modelos, incluida la salida estructurada del extractor.
-- **Pydantic:** define un contrato de salida común para todos los casos, independiente de la redacción del modelo.
-- **Langfuse:** permite inspeccionar entradas, salidas y tiempos por etapa, junto con las métricas de las llamadas al modelo.
-- **Orquestación secuencial:** `main.py` coordina el flujo mediante llamadas directas. La aplicación no define un grafo con LangGraph: el flujo actual no incluye ramificaciones ni ciclos de agentes.
-
-## Estado actual
-
-El proyecto implementa transcripción multimodal, dos agentes especializados, salida estructurada, validación de imágenes, manejo de errores, ejecución por línea de comandos y observabilidad jerárquica con Langfuse. Incluye dos escenarios con resultados de referencia para revisión manual.
-
-El alcance actual es la comparación de una imagen del contrato con una imagen de su adenda. La revisión de la exactitud de la transcripción y de los cambios detectados sigue siendo manual.
+Developed as the Module 4 final project for an AI Engineering program.

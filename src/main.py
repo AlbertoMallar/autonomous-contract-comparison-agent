@@ -20,7 +20,7 @@ TEST_CASES = {
 
 
 def main():
-    #para ejecutar el programa desde terminal indicando qué documentos queremos analizar
+    
     parser = argparse.ArgumentParser(
         description="Compara un contrato original con su adenda."
     )
