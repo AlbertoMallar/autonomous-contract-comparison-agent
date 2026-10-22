@@ -4,7 +4,7 @@ A multimodal AI pipeline that compares an original contract with its amendment f
 
 The command-line application combines **GPT-4o Vision** for transcription, two specialized agents built with **LangChain** for contextualization and extraction, **Pydantic** for output validation, and **Langfuse** for observability. Orchestration consists of direct sequential calls in Python.
 
-[Architecture](#architecture) · [Example Output](#example-output) · [Installation](#installation) · [Usage](#usage) · [Current Limitations](#current-limitations)
+[Demo](#demo) · [Architecture](#architecture) · [Example Output](#example-output) · [Installation](#installation) · [Usage](#usage) · [Current Limitations](#current-limitations)
 
 ## What it does
 
@@ -14,6 +14,14 @@ The command-line application combines **GPT-4o Vision** for transcription, two s
 4. Passes the map and both source texts to an extraction agent to identify additions, removals, and modifications.
 5. Validates the response against a Pydantic model and prints the result as JSON.
 6. Records the execution stages in Langfuse, including their inputs, outputs, and timing.
+
+## Demo
+
+### Langfuse trace
+
+The `contract-analysis` trace shows separate transcription, contextualization, and extraction stages, together with the input paths and structured output for the complex test case.
+
+![Autonomous Contract Comparison Agent Langfuse trace](docs/images/m4-langfuse-trace.png)
 
 ## Tech Stack
 
